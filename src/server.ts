@@ -46,12 +46,62 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const startTime = Date.now();
+    
     try {
+      const url = new URL(request.url);
+      
+      // Handle /metrics endpoint
+      if (url.pathname === '/metrics') {
+        try {
+          const { register } = await import('./lib/metrics');
+          const metrics = await register.metrics();
+          return new Response(metrics, {
+            status: 200,
+            headers: { 'content-type': register.contentType },
+          });
+        } catch (error) {
+          console.error('Error generating metrics:', error);
+          return new Response('Error generating metrics', { status: 500 });
+        }
+      }
+      
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalizedResponse = await normalizeCatastrophicSsrResponse(response);
+      
+      // Record metrics
+      const duration = Date.now() - startTime;
+      try {
+        const { httpRequestDuration, httpRequestTotal } = await import('./lib/metrics');
+        const route = url.pathname;
+        const method = request.method;
+        
+        httpRequestDuration
+          .labels(method, route, normalizedResponse.status)
+          .observe(duration / 1000);
+        httpRequestTotal
+          .labels(method, route, normalizedResponse.status)
+          .inc();
+      } catch (metricsError) {
+        console.warn('Error recording request metrics:', metricsError);
+      }
+      
+      return normalizedResponse;
     } catch (error) {
       console.error(error);
+      
+      // Record error metric
+      try {
+        const { applicationErrors } = await import('./lib/metrics');
+        const url = new URL(request.url);
+        applicationErrors
+          .labels('unhandled', url.pathname)
+          .inc();
+      } catch (metricsError) {
+        console.warn('Error recording error metric:', metricsError);
+      }
+      
       return new Response(renderErrorPage(), {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },

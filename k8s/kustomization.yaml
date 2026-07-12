@@ -1,0 +1,91 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cuisineensemble
+
+resources:
+  - storage.yaml
+  - configmaps.yaml
+  - secrets-rbac.yaml
+  - infrastructure.yaml
+  - app.yaml
+
+# Common labels for all resources
+commonLabels:
+  app.kubernetes.io/name: cuisineensemble
+  app.kubernetes.io/version: "1.0.0"
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations
+commonAnnotations:
+  description: "CuisineEnsemble - Meal sharing between neighbors"
+
+# Replicas
+replicas:
+  - name: cuisineensemble-app
+    count: 3
+  - name: prometheus
+    count: 1
+  - name: grafana
+    count: 1
+  - name: postgres
+    count: 1
+
+# Images (can be overridden)
+images:
+  - name: cuisineensemble
+    newTag: latest
+  - name: postgres
+    newTag: "16-alpine"
+  - name: prom/prometheus
+    newTag: latest
+  - name: grafana/grafana
+    newTag: latest
+
+# ConfigMap generator (for configs that change)
+configMapGenerator:
+  - name: prometheus-config
+    behavior: merge
+    files:
+      - monitoring/prometheus.yml
+      - monitoring/alerting-rules.yml
+
+# Secret generator
+secretGenerator:
+  - name: app-secrets
+    envs:
+      - .env.k8s
+    behavior: merge
+
+# Patches
+patchesStrategicMerge:
+  - |-
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: prometheus-config
+    data:
+      prometheus.yml: |
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        rule_files:
+          - '/etc/prometheus/alerting-rules.yml'
+        scrape_configs:
+          - job_name: 'kubernetes-apiservers'
+            kubernetes_sd_configs:
+              - role: endpoints
+            scheme: https
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+# Variable substitutions
+vars:
+  - name: NAMESPACE
+    objref:
+      kind: Deployment
+      name: cuisineensemble-app
+      apiVersion: apps/v1
+    fieldref:
+      fieldpath: metadata.namespace

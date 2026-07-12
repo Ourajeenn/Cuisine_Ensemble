@@ -10,7 +10,7 @@ create table if not exists public.profiles (
 );
 
 create table if not exists public.meals (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   host_id uuid references public.profiles(id) on delete cascade,
   title text not null,
   neighborhood text not null,
@@ -22,7 +22,7 @@ create table if not exists public.meals (
 
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
-  thread_id uuid not null,
+  thread_id text not null,
   author_name text not null,
   body text not null,
   created_at timestamptz not null default now()
@@ -31,7 +31,7 @@ create table if not exists public.messages (
 create table if not exists public.reservations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id) on delete cascade,
-  meal_id uuid references public.meals(id) on delete cascade,
+  meal_id text references public.meals(id) on delete cascade,
   seats integer not null default 1,
   payment_status text not null default 'simulated',
   created_at timestamptz not null default now()

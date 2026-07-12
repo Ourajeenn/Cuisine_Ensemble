@@ -50,7 +50,11 @@ function playIncomingMessageTone() {
 
   const AudioCtor =
     window.AudioContext ??
-    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    (
+      window as Window & {
+        webkitAudioContext?: typeof AudioContext;
+      }
+    ).webkitAudioContext;
 
   if (!AudioCtor) return;
 

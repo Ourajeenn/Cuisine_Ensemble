@@ -1,18 +1,68 @@
-groups:
-  - name: cuisineensemble.rules
-    rules:
-      - alert: AppDown
-        expr: up == 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: Service application down
+# Alerting Rules for CuisineEnsemble
 
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # Alert on high error rate
       - alert: HighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        expr: rate(application_errors_total[5m]) > 0.05
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: High error rate detected
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for the last 5 minutes"
+
+      # Alert on high latency
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency detected"
+          description: "P95 latency is above 1 second"
+
+      # Alert on memory usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Application memory usage is above 500MB"
+
+      # Alert on container restart
+      - alert: ContainerRestarting
+        expr: rate(increase(process_start_time_seconds[15m])[5m:1m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container is restarting"
+          description: "Container has restarted multiple times in the last 15 minutes"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Alert on Prometheus scrape failures
+      - alert: PrometheusScrapeFailed
+        expr: up{job="cuisineensemble-app"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus scrape failed"
+          description: "Unable to scrape metrics from {{ $labels.job }}"
+
+      # Alert on low disk space
+      - alert: LowDiskSpace
+        expr: node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Less than 10% disk space available"

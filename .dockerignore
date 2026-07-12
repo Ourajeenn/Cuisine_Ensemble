@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log*
+coverage
+test-results
+.git
+.github
+.vite
+.env
+.env.*
+*.log

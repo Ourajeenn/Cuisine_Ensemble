@@ -12,9 +12,11 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerting-rules.yml:/etc/prometheus/alerting-rules.yml:ro
+      - ${APP_DATA_ROOT:-./data/prod}/prometheus:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
     networks:
       - monitoring
 
@@ -27,18 +29,13 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ${APP_DATA_ROOT:-./data/prod}/grafana:/var/lib/grafana
-    networks:
-      - monitoring
-
-  loki:
-    image: grafana/loki:latest
-    container_name: cuisineensemble-loki
-    restart: unless-stopped
-    ports:
-      - "3100:3100"
+    depends_on:
+      - prometheus
     networks:
       - monitoring
 
