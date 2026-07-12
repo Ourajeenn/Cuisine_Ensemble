@@ -1,17 +1,56 @@
-app = "cuisineensemble"
-primary_region = "cdg"
+# Fly.io Configuration for CuisineEnsemble
+app = "cuisineensemble-app"
+primary_region = "syd"
+console_command = "/bin/sh"
 
 [build]
-  dockerfile = "Dockerfile"
+dockerfile = "Dockerfile"
+builder = "paketobuildpacks"
+
+[env]
+NODE_ENV = "production"
+PORT = "3000"
 
 [http_service]
-  internal_port = 3000
-  force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 0
+internal_port = 3000
+force_https = true
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 1
 
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 4
-  memory_mb = 2048
+[[services]]
+protocol = "tcp"
+internal_port = 3000
+
+  [[services.ports]]
+  number = 80
+  handlers = ["http"]
+  force_https = true
+
+  [[services.ports]]
+  number = 443
+  handlers = ["tls", "http"]
+
+  [services.concurrency]
+  type = "requests"
+  hard_limit = 1000
+  soft_limit = 200
+
+  [services.tcp_checks]
+  grace_period = "30s"
+  interval = "15s"
+  timeout = "10s"
+
+[metrics]
+port = 3000
+path = "/metrics"
+
+# Static files
+[[statics]]
+guest_path = "/app/dist/public"
+url_path = "/static"
+
+# Volumes for data persistence (optional)
+[[mounts]]
+source = "data"
+destination = "/app/data"
