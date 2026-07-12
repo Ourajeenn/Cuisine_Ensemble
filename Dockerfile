@@ -1,7 +1,7 @@
 FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev --prefer-offline
+RUN npm install --prefer-offline
 COPY . .
 RUN npm run build
 
@@ -9,7 +9,7 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev --prefer-offline --no-audit
+RUN npm install --omit=dev --prefer-offline
 COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
