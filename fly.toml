@@ -2,9 +2,6 @@
 app = "cuisineensemble-app"
 primary_region = "syd"
 
-[build]
-dockerfile = "Dockerfile"
-
 [env]
 NODE_ENV = "production"
 PORT = "3000"
