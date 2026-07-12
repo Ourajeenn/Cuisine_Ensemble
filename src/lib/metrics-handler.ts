@@ -29,12 +29,12 @@ export function metricsMiddleware(
   duration: number,
 ) {
   const { httpRequestDuration, httpRequestTotal } = require('./metrics');
-  
+
   httpRequestDuration
-    .labels(method, route, statusCode)
+    .labels(method, route, String(statusCode))
     .observe(duration / 1000); // Convert to seconds
-  
+
   httpRequestTotal
-    .labels(method, route, statusCode)
+    .labels(method, route, String(statusCode))
     .inc();
 }

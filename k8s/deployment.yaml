@@ -15,6 +15,15 @@ spec:
       containers:
         - name: cuisineensemble
           image: cuisineensemble:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3000
 ---

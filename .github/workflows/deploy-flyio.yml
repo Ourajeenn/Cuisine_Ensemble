@@ -5,6 +5,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+  FLY_APP_NAME: ${{ vars.FLY_APP_NAME || 'cuisineensemble-app' }}
+
 jobs:
   deploy:
     name: Deploy to Fly.io
@@ -17,14 +28,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Lint
-        run: npm run lint || true
+        run: npm run lint
 
       - name: Build
         env:
@@ -32,15 +43,17 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
+      - name: Install Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
       - name: Deploy to Fly.io
-        uses: superfly/flyctl-actions@master
-        with:
-          args: "deploy --local-only"
+        run: flyctl deploy --remote-only --app "${FLY_APP_NAME}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Verify deployment
         run: |
-          flyctl status -a cuisineensemble-app
+          flyctl status -a "${FLY_APP_NAME}"
+          curl -fsS "https://${FLY_APP_NAME}.fly.dev/metrics" | head -n 5
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

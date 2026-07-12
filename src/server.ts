@@ -51,7 +51,15 @@ export default {
     try {
       const url = new URL(request.url);
       
-      // Handle /metrics endpoint
+      // Handle /health endpoint (for load balancers like Fly.io)
+      if (url.pathname === '/health') {
+        return new Response(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      
+      // Handle /metrics endpoint (Prometheus)
       if (url.pathname === '/metrics') {
         try {
           const { register } = await import('./lib/metrics');
@@ -78,10 +86,10 @@ export default {
         const method = request.method;
         
         httpRequestDuration
-          .labels(method, route, normalizedResponse.status)
+          .labels(method, route, String(normalizedResponse.status))
           .observe(duration / 1000);
         httpRequestTotal
-          .labels(method, route, normalizedResponse.status)
+          .labels(method, route, String(normalizedResponse.status))
           .inc();
       } catch (metricsError) {
         console.warn('Error recording request metrics:', metricsError);

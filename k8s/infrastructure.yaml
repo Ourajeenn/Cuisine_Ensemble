@@ -19,6 +19,15 @@ spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 5432
               name: postgres
@@ -104,6 +113,15 @@ spec:
       containers:
         - name: prometheus
           image: prom/prometheus:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 9090
               name: web
@@ -181,6 +199,15 @@ spec:
       containers:
         - name: grafana
           image: grafana/grafana:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 472
+            runAsGroup: 472
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3000
               name: web

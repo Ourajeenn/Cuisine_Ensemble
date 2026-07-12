@@ -8,6 +8,11 @@ services:
       dockerfile: Dockerfile
     container_name: cuisineensemble-app
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     ports:
       - "3000:3000"
     environment:
@@ -24,6 +29,12 @@ services:
     image: postgres:16-alpine
     container_name: cuisineensemble-postgres
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
     environment:
       POSTGRES_DB: cuisineensemble
       POSTGRES_USER: cuisineensemble

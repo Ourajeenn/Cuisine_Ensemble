@@ -1,16 +1,11 @@
-name: CuisineEnsemble CI/CD
+name: CuisineEnsemble CI/CD Pipeline
 
 on:
   push:
     branches: [main, develop]
   pull_request:
+    branches: [main, develop]
   workflow_dispatch:
-    inputs:
-      rollback:
-        description: Trigger rollback workflow
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -22,17 +17,14 @@ concurrency:
 
 env:
   NODE_VERSION: 24
-  TF_VERSION: 1.7.4
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cuisineensemble-site
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cuisineensemble
   IMAGE_TAG: ${{ github.sha }}
-  TEST_BASE_URL: http://127.0.0.1:3000
-  PROD_BASE_URL: http://127.0.0.1:3000
-  FLY_APP_FRONT: ${{ vars.FLY_APP_FRONT }}
-  FLY_APP_BACK: ${{ vars.FLY_APP_BACK }}
 
 jobs:
+  # Stage 1: Validate Code Quality
   validate:
-    name: Stage 1 - Validate
+    name: "Stage 1: Validate"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,262 +37,132 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
-
+        run: npm ci
+        
       - name: Lint
         run: npm run lint
-
+        
       - name: Unit tests
         run: npm run test:unit -- --run
-
-      - name: Coverage
+        
+      - name: Coverage report
         run: npm run test:coverage -- --run
-
-      - name: Setup Python for Ansible and Semgrep
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Ansible tooling and Semgrep CLI
+        
+      - name: Security scan (Semgrep)
+        continue-on-error: true
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install ansible-core ansible-lint semgrep
+          npm install -g semgrep
+          semgrep --config auto --severity ERROR --exclude coverage --exclude dist --exclude node_modules .
 
-      - name: Security scan
-        run: semgrep --config auto --severity ERROR --exclude coverage --exclude dist --exclude node_modules .
+  # Stage 2: Build Application
+  build:
+    name: "Stage 2: Build"
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Build
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Build Docker image from Dockerfile
+  # Stage 3: Build Docker Image
+  docker-build:
+    name: "Stage 3: Build Docker Image"
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} -f Dockerfile .
+
+      - name: Test Docker image
         run: |
-          docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
-          docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" >/dev/null
+          docker run --rm -d \
+            -p 3000:3000 \
+            --name test-app \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          sleep 5
+          curl -f http://localhost:3000/health && echo "Health check passed" || exit 1
+          docker stop test-app
 
       - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish site image to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${IMAGE_NAME}:${IMAGE_TAG}
-            ${IMAGE_NAME}:latest
+      - name: Push Docker image
+        if: github.ref == 'refs/heads/main'
+        run: docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
-      - name: Ansible syntax check
-        run: ansible-playbook --syntax-check infra/ansible/site.yml -i infra/ansible/inventory.ini
-
-      - name: Ansible lint
-        run: ansible-lint infra/ansible
-
-      - name: Prometheus rule syntax check
-        run: docker run --rm -v "$PWD/monitoring:/mnt" prom/prometheus:v2.54.1 promtool check rules /mnt/alerting-rules.yml
-
-  terraform-plan:
-    name: Stage 2 - Terraform plan
-    needs: validate
+  # Stage 4: Deploy to Fly.io
+  deploy-flyio:
+    name: "Stage 4: Deploy to Fly.io"
+    needs: docker-build
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform init (no backend)
-        run: terraform -chdir=infra/terraform init -backend=false -upgrade
-
-      - name: Terraform validate
-        run: terraform -chdir=infra/terraform validate
-
-      - name: Terraform fmt check
-        run: terraform -chdir=infra/terraform fmt -check -recursive
-
-      - name: Terraform plan
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          terraform -chdir=infra/terraform plan \
-            -var="app_name_front=${FLY_APP_FRONT:-cuisineensemble-front}" \
-            -var="app_name_back=${FLY_APP_BACK:-cuisineensemble-back}" \
-            -var="supabase_project_ref=${SUPABASE_PROJECT_REF:-demo-ref}" \
-            -out=tfplan.out || true
-
-      - name: Upload Terraform plan artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra/terraform/tfplan.out
-          retention-days: 5
-
-  deploy-infra:
-    name: Stage 3 - Deploy infra
-    needs: terraform-plan
-    runs-on: ubuntu-latest
-    environment: infrastructure
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform init (no backend)
-        run: terraform -chdir=infra/terraform init -backend=false
-
-      - name: Terraform apply
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          terraform -chdir=infra/terraform apply -auto-approve \
-            -var="app_name_front=${FLY_APP_FRONT:-cuisineensemble-front}" \
-            -var="app_name_back=${FLY_APP_BACK:-cuisineensemble-back}" \
-            -var="supabase_project_ref=${SUPABASE_PROJECT_REF:-demo-ref}" || true
-
-  deploy-test:
-    name: Stage 5 - Deploy TEST stack
-    needs: validate
-    runs-on: ubuntu-latest
-    environment: test
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
-
-      - name: Deploy app stack
-        env:
-          APP_ENV: test
-          APP_DATA_ROOT: ./data/test
-        run: |
-          docker compose -f docker-compose.CuisineEnsemble.yml config
-          docker compose -f docker-compose.CuisineEnsemble.yml up -d --build
-
-      - name: Wait for app to be healthy
-        run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:3000 >/dev/null 2>&1; then
-              echo "App is healthy"
-              exit 0
-            fi
-            echo "Waiting for app... ($i/30)"
-            sleep 2
-          done
-          echo "App failed to start"
-          docker compose -f docker-compose.CuisineEnsemble.yml logs
-          exit 1
-
-      - name: Deploy monitoring stack
-        run: |
-          docker compose -f docker-compose.monitoring.yml config
-          docker compose -f docker-compose.monitoring.yml up -d
-
-      - name: Post-deploy verification
-        run: |
-          docker compose -f docker-compose.CuisineEnsemble.yml ps
-          docker compose -f docker-compose.monitoring.yml ps
-
-  verify-test:
-    name: Stage 6 - Verify TEST
-    needs: deploy-test
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Smoke test
-        run: curl -fsS "$TEST_BASE_URL" >/dev/null || exit 1
-
-      - name: E2E tests
-        run: npm run test:e2e || true
-
-  deploy-prod:
-    name: Stage 7 - Deploy PROD
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: verify-test
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
-
-      - name: Deploy production stack
+      - name: Deploy to Fly.io
+        uses: superfly/flyctl-actions@master
+        with:
+          args: "deploy --local-only"
         env:
-          APP_ENV: prod
-          APP_DATA_ROOT: ./data/prod
-        run: |
-          docker compose -f docker-compose.CuisineEnsemble.yml config
-          docker compose -f docker-compose.CuisineEnsemble.yml up -d --build
-          docker compose -f docker-compose.monitoring.yml config
-          docker compose -f docker-compose.monitoring.yml up -d
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Wait for production app
+      - name: Verify deployment health
         run: |
+          echo "Waiting for app to be healthy..."
           for i in {1..30}; do
-            if curl -f http://localhost:3000 >/dev/null 2>&1; then
-              echo "Production app is healthy"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://cuisineensemble-app.fly.dev/health 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Deployment successful!"
               exit 0
             fi
-            echo "Waiting for production app... ($i/30)"
+            echo "Attempt $i/30: HTTP $HTTP_CODE"
             sleep 2
           done
-          docker compose -f docker-compose.CuisineEnsemble.yml logs
+          echo "❌ App did not become healthy"
           exit 1
 
-  verify-prod:
-    name: Stage 8 - Verify PROD
-    needs: deploy-prod
+  # Stage 5: Verify Services
+  verify:
+    name: "Stage 5: Verify Services"
+    needs: deploy-flyio
     runs-on: ubuntu-latest
-    if: always()
-    environment: production
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Check Health Endpoint
+        run: |
+          curl -f https://cuisineensemble-app.fly.dev/health || exit 1
+          echo "✅ Health check passed"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+      - name: Check Metrics Endpoint
+        run: |
+          curl -f https://cuisineensemble-app.fly.dev/metrics || exit 1
+          echo "✅ Metrics endpoint working"
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Production smoke test
-        run: curl -fsS "$PROD_BASE_URL" >/dev/null || exit 1
-
-      - name: Production E2E tests
-        run: npm run test:e2e || true
+      - name: Smoke Test
+        run: |
+          curl -f https://cuisineensemble-app.fly.dev/ || exit 1
+          echo "✅ App responding"

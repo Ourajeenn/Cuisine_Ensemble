@@ -5,6 +5,11 @@ services:
     image: prom/prometheus:latest
     container_name: cuisineensemble-prometheus
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     ports:
       - "9090:9090"
     extra_hosts:
@@ -24,6 +29,11 @@ services:
     image: grafana/grafana:latest
     container_name: cuisineensemble-grafana
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     ports:
       - "3001:3000"
     environment:

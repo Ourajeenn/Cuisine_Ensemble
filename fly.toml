@@ -1,11 +1,9 @@
-# Fly.io Configuration for CuisineEnsemble
+# Fly.io Configuration - CuisineEnsemble
 app = "cuisineensemble-app"
 primary_region = "syd"
-console_command = "/bin/sh"
 
 [build]
 dockerfile = "Dockerfile"
-builder = "paketobuildpacks"
 
 [env]
 NODE_ENV = "production"
@@ -44,13 +42,3 @@ internal_port = 3000
 [metrics]
 port = 3000
 path = "/metrics"
-
-# Static files
-[[statics]]
-guest_path = "/app/dist/public"
-url_path = "/static"
-
-# Volumes for data persistence (optional)
-[[mounts]]
-source = "data"
-destination = "/app/data"

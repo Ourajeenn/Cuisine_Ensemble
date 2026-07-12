@@ -1,0 +1,6 @@
+coverage/
+dist/
+node_modules/
+**/vendor/
+**/data/prod/grafana/**
+**/monitoring/grafana/**
