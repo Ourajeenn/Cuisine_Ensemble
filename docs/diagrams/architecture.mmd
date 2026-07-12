@@ -1,0 +1,15 @@
+flowchart LR
+    A[GitHub Actions
+    9 stages] --> B[Validate]
+    B --> C[Terraform plan]
+    C --> D[Terraform apply]
+    D --> E[Ansible configure VMs]
+    E --> F[Deploy TEST]
+    F --> G[Verify TEST]
+    G --> H[Deploy PROD]
+    H --> I[Verify PROD]
+    I --> J[Rollback manual]
+
+    K[Supabase Postgres] --> L[Auth + Messages]
+    M[Fly.io VM Front] --> N[CuisineEnsemble UI]
+    O[Fly.io VM Back] --> P[Services + API]

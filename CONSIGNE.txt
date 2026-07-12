@@ -1,0 +1,17 @@
+CuisineEnsemble — architecture et déploiement
+
+- Architecture : API REST + frontend SPA
+- Conteneurisation : Docker obligatoire (Dockerfile + docker-compose)
+- Orchestration : Kubernetes recommandé pour le scaling
+- Cloud : Fly.io
+- Domaine : HTTPS avec nom de domaine personnalisé et certificat TLS
+- Authentification : JWT + refresh tokens
+- Chiffrement : HTTPS obligatoire, mots de passe hachés via bcrypt
+- Observabilité : Prometheus, Grafana, Loki
+- Alertes : notifications mail/Slack sur pannes
+- Déploiement : staging/prod avec rollback
+- Git / CI : GitHub Actions ou GitLab CI, stratégie GitFlow/GitHub Flow
+- Qualité : tests unitaires, intégration, linting, sécurité, Semgrep
+- Base de données : PostgreSQL + MongoDB, migrations gestionnées
+- Documentation : README, guides utilisateur/admin, architecture et performance
+- Test E2E : Playwright, validation de l’application sur URL publique

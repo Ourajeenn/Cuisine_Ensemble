@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuisineensemble
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cuisineensemble
+  template:
+    metadata:
+      labels:
+        app: cuisineensemble
+    spec:
+      containers:
+        - name: cuisineensemble
+          image: cuisineensemble:latest
+          ports:
+            - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuisineensemble
+spec:
+  selector:
+    app: cuisineensemble
+  ports:
+    - port: 80
+      targetPort: 3000

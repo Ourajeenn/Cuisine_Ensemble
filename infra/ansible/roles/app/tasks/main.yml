@@ -1,0 +1,9 @@
+- name: Copy app environment file
+  ansible.builtin.copy:
+    src: "../../../../../.env.example"
+    dest: "{{ app_dir }}/.env"
+    mode: "0600"
+
+- name: Start application stack
+  ansible.builtin.command: docker compose -f "{{ app_dir }}/{{ app_compose_file }}" up -d --build
+  changed_when: true

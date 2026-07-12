@@ -1,0 +1,4 @@
+app_dir: /opt/cuisineensemble
+runtime_env: production
+app_compose_file: docker-compose.CuisineEnsemble.yml
+monitoring_compose_file: docker-compose.monitoring.yml

@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  app:
+    image: cuisineensemble:${APP_ENV:-prod}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cuisineensemble-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:-prod}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://example.supabase.co}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-demo-key}
+    depends_on:
+      - postgres
+    networks:
+      - cuisineensemble
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: cuisineensemble-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cuisineensemble
+      POSTGRES_USER: cuisineensemble
+      POSTGRES_PASSWORD: cuisineensemble
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${APP_DATA_ROOT:-./data/prod}/postgres:/var/lib/postgresql/data
+    networks:
+      - cuisineensemble
+
+networks:
+  cuisineensemble:
+    driver: bridge

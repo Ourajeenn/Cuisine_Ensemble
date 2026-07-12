@@ -1,0 +1,9 @@
+- name: Copy monitoring rules
+  ansible.builtin.copy:
+    src: "../../../../../monitoring/alerting-rules.yml"
+    dest: "{{ app_dir }}/monitoring/alerting-rules.yml"
+    mode: "0644"
+
+- name: Start monitoring stack
+  ansible.builtin.command: docker compose -f "{{ app_dir }}/{{ monitoring_compose_file }}" up -d --build
+  changed_when: true

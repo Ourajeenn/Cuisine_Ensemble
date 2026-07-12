@@ -1,0 +1,258 @@
+name: CuisineEnsemble CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rollback:
+        description: Trigger rollback workflow
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cuisineensemble-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 20
+  TF_VERSION: 1.7.4
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cuisineensemble-site
+  IMAGE_TAG: ${{ github.sha }}
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+  TEST_BASE_URL: http://127.0.0.1:3000
+  PROD_BASE_URL: http://127.0.0.1:3000
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  FLY_APP_FRONT: ${{ vars.FLY_APP_FRONT }}
+  FLY_APP_BACK: ${{ vars.FLY_APP_BACK }}
+
+jobs:
+  validate:
+    name: Stage 1 - Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit -- --run
+
+      - name: Coverage
+        run: npm run test:coverage -- --run
+
+      - name: Security scan
+        run: npx semgrep --config auto .
+
+      - name: Build
+        run: npm run build
+
+      - name: Build Docker image from Dockerfile
+        run: |
+          docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
+          docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" >/dev/null
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish site image to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${IMAGE_NAME}:${IMAGE_TAG}
+            ${IMAGE_NAME}:latest
+
+      - name: Setup Python for Ansible
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible tooling
+        run: python -m pip install ansible-core ansible-lint
+
+      - name: Ansible syntax check
+        run: ansible-playbook --syntax-check infra/ansible/site.yml -i infra/ansible/inventory.ini
+
+      - name: Ansible lint
+        run: ansible-lint infra/ansible
+
+      - name: Prometheus rule syntax check
+        run: docker run --rm -v "$PWD/monitoring:/mnt" prom/prometheus:v2.54.1 promtool check rules /mnt/alerting-rules.yml
+
+  terraform-plan:
+    name: Stage 2 - Terraform plan
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform -chdir=infra/terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=infra/terraform validate
+
+      - name: Terraform plan
+        run: |
+          terraform -chdir=infra/terraform plan \
+            -var="app_name_front=${FLY_APP_FRONT}" \
+            -var="app_name_back=${FLY_APP_BACK}" \
+            -var="supabase_project_ref=${SUPABASE_PROJECT_REF}" \
+            -out=tfplan.out
+
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra/terraform/tfplan.out
+
+  deploy-infra:
+    name: Stage 3 - Deploy infra
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    environment: infrastructure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform apply
+        run: |
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform apply -auto-approve \
+            -var="app_name_front=${FLY_APP_FRONT}" \
+            -var="app_name_back=${FLY_APP_BACK}" \
+            -var="supabase_project_ref=${SUPABASE_PROJECT_REF}"
+
+  configure-vms:
+    name: Stage 4 - Configure VMs
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: python -m pip install ansible-core
+
+      - name: Run Ansible playbook
+        run: ansible-playbook -i infra/ansible/inventory.ini infra/ansible/site.yml
+
+  deploy-test:
+    name: Stage 5 - Deploy TEST stack
+    needs: configure-vms
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy app and monitoring stack
+        env:
+          APP_ENV: test
+          APP_DATA_ROOT: ./data/test
+        run: |
+          docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
+          docker compose -f docker-compose.CuisineEnsemble.yml build app
+          docker compose -f docker-compose.CuisineEnsemble.yml up -d --build
+          docker compose -f docker-compose.monitoring.yml up -d --build
+
+      - name: Post-deploy hook
+        run: bash scripts/post-deploy.sh
+
+  verify-test:
+    name: Stage 6 - Verify TEST
+    needs: deploy-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke tests on TEST
+        run: |
+          curl -fsS "$TEST_BASE_URL" >/dev/null
+          npm run test:e2e
+
+  deploy-prod:
+    name: Stage 7 - Deploy PROD
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify-test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy production stack
+        env:
+          APP_ENV: prod
+          APP_DATA_ROOT: ./data/prod
+        run: |
+          docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f Dockerfile .
+          docker compose -f docker-compose.CuisineEnsemble.yml build app
+          docker compose -f docker-compose.CuisineEnsemble.yml up -d --build
+          docker compose -f docker-compose.monitoring.yml up -d --build
+
+  verify-prod:
+    name: Stage 8 - Verify PROD
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Smoke tests on PROD
+        run: |
+          curl -fsS "$PROD_BASE_URL" >/dev/null
+          npm run test:e2e
+
+  rollback:
+    name: Stage 9 - Rollback
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback
+    needs: [deploy-prod, verify-prod]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run rollback script
+        run: bash scripts/rollback.sh
