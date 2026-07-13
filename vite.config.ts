@@ -10,5 +10,15 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  plugins: [tailwindcss(), tanstackStart(), react()],
+  server: {
+    host: "0.0.0.0",
+    port: 3000,
+  },
+  plugins: [
+    tailwindcss(),
+    tanstackStart({
+      target: "node-server",
+    }),
+    react(),
+  ],
 });
