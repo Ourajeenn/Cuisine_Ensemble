@@ -14,7 +14,7 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=5 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
   CMD node -e "require('http').get('http://localhost:8080/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
 
-CMD ["node", "dist/server/server.js"]
+CMD ["node", "server-wrapper.mjs"]

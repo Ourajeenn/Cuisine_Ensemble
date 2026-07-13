@@ -1,0 +1,18 @@
+{
+	"ulid": "01KXD5VZDPPB208NH3BQ082KEE",
+	"minTime": 1783893606659,
+	"maxTime": 1783900800000,
+	"stats": {
+		"numSamples": 428386,
+		"numFloatSamples": 428386,
+		"numSeries": 916,
+		"numChunks": 2794
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01KXD5VZDPPB208NH3BQ082KEE"
+		]
+	},
+	"version": 1
+}
