@@ -13,7 +13,7 @@ COPY package*.json ./
 RUN npm install --omit=dev --prefer-offline
 COPY --from=builder /app/dist ./dist
 COPY server.mjs ./server.mjs
-EXPOSE 3000
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
+  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
 CMD ["node", "server.mjs"]

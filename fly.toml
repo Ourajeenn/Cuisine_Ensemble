@@ -4,17 +4,17 @@ primary_region = "syd"
 
 [env]
 NODE_ENV = "production"
-PORT = "3000"
+PORT = "8080"
 
 [http_service]
-internal_port = 3000
+internal_port = 8080
 force_https = true
 auto_stop_machines = true
 auto_start_machines = true
 
 [[services]]
 protocol = "tcp"
-internal_port = 3000
+internal_port = 8080
 
   [[services.ports]]
   port = 80
@@ -35,5 +35,5 @@ internal_port = 3000
   timeout = "10s"
 
 [metrics]
-port = 3000
+port = 8080
 path = "/metrics"
